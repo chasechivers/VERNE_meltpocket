@@ -85,7 +85,7 @@ class IceSystem(HeatSolver):
 		# Thermal properties
 		rho_i = 917.  # kg/m3, pure ice density
 		rho_w = 1000.  # kg/m3 pure water density
-		# assuming icefin specs: https: // auvac.org / configurations / view / 270
+		# assuming icefin specs: https://auvac.org/configurations/view/270
 		# mass = 93.9 kg
 		# H x W x L = 3 x 0.23 x 0.23 m
 		# assuming its a cylinder
@@ -145,7 +145,7 @@ class IceSystem(HeatSolver):
 
 		if self.kT:
 			self.k = (1 - self.phi) * self.constants.ki + self.phi * self.constants.kw
-			self.k[self.vehicle == 1] = self.constants.kv
+			self.k[self.vehicle==1] = self.constants.kv
 		else:
 			self.k = (1 - self.phi) * self.constants.ac / self.T + self.phi * self.constants.kw
 
@@ -190,7 +190,7 @@ class IceSystem(HeatSolver):
 					used if you want to simulate some portion of a much larger shell, so this parameter is used to
 					make the temperature profile that of the much larger shell than the one being simulated.
 					For example, a 40 km conductive shell (real_Lz = 40e3) discretized at 10 m can be computationally
-					expensive.However, if we assume that any temperature anomaly at shallow depths (~1-5km) won't
+					expensive. However, if we assume that any temperature anomaly at shallow depths (~1-5km) won't
 					reach to 40km within the model time, we can reduce the computational domain to ~5km to speed up
 					the simulation. This will take the Tbot as the Tbot of a 40km and find the temperature at 5km to
 					account for the reduced domain size.
@@ -218,19 +218,15 @@ class IceSystem(HeatSolver):
 		if isinstance(profile, str):
 			if profile == 'non-linear':
 				if real_Lz > 0:
+					self.real_Lz = real_Lz
 					Tbot = Tsurf * (Tbot / Tsurf) ** (self.Lz / real_Lz)
 				self.T = Tsurf * (Tbot / Tsurf) ** (abs(self.Z / self.Lz))
 
 			elif profile == 'linear':
 				if real_Lz > 0:
+					self.real_Lz = real_Lz
 					Tbot = (Tbot - Tsurf) * (self.Lz / real_Lz) + Tsurf
 				self.T = (Tbot - Tsurf) * abs(self.Z / self.Lz) + Tsurf
-
-			elif profile == 'stefan':
-				self.T[0, :] = Tsurf  # set the very top of grid to surface temperature
-				self.T[1:, :] = Tbot  # everything below is at the melting temperature
-				self.phi[1:, :] = 1  # everything starts as liquid
-				profile += ' plus domain all water'
 
 			print('init_T(Tsurf = {}, Tbot = {})'.format(Tsurf, Tbot))
 			print('\t Temperature profile initialized to {}'.format(profile))
@@ -248,88 +244,63 @@ class IceSystem(HeatSolver):
 		self.Tbot = Tbot
 		self.init_volume_averages()
 
-	def set_vehicle_geom(self, depth, length, radius, geometry='box'):
-		return 0
-
-	def init_vehicle(self, depth, length, width, T, geometry='box'):
-		r = np.where(abs(self.X[0, :]) <= width/2)[0]
-		z = np.intersect1d(np.where(self.Z[:, 0] <= length + depth), np.where(self.Z[:, 0] >= depth))
-		tmp = np.zeros(self.T.shape)
-		tmp[z.min():z.max(), r.min():r.max() + 1] = 1
-		self.geom = np.where(tmp == 1)
-
-	def set_intrusion_geom(self, depth, thickness, radius, geometry='ellipse'):
-		"""
-		Sets geometry of intrusion. In practice, is automatically called by init_intrusion() and generally unneeded
-		to be called in simulation script. Creates tuple IceSystem.geom that holds the initial intrusion grid indices for
-		manipulation inside simulation and outside for more customization.
-		"""
-
+	def set_vehicle_geom(self, depth, length, radius, num_RTG, geometry, rtg_size=0.6):
 		if isinstance(geometry, str):
-			if geometry == 'ellipse':
-				center = thickness / 2 + depth
-				try:
-					if self.symmetric:  # adjust geometry to make sure the center of the intrusion isn't on the boundary
-						_R_ = self.X - self.dx
-						thickness += self.dz
-				except AttributeError:
-					_R_ = self.X
-				self.geom = np.where((_R_ / radius) ** 2 + (self.Z - center) ** 2 / ((thickness / 2) ** 2) <= 1)
-			# del center, _R_
-			elif geometry == 'box':
-				try:
-					if self.symmetric:  # adjust geometry to make sure the center of the intrusion isn't on the boundary
-						radius += self.dx
-				except AttributeError:
-					radius = radius
-				r = np.where(abs(self.X[0, :]) <= radius)[0]
-				z = np.intersect1d(np.where(self.Z[:, 0] <= thickness + depth), np.where(self.Z[:, 0] >= depth))
+			if geometry == 'box':
+				print('setting geometry')
+				#center = self.vh / 2 + de
+				r = np.where(abs(self.X[0, :]) <= radius / 2)[0]
+				z = np.intersect1d(np.where(self.Z[:, 0] <= length + depth), np.where(self.Z[:, 0] >= depth))
 				tmp = np.zeros(self.T.shape)
 				tmp[z.min():z.max(), r.min():r.max() + 1] = 1
-				self.geom = np.where(tmp == 1)
-		# del tmp, r, z
+				self.vehicle_geom = np.where(tmp == 1)
 
-		# option for a custom geometry
+				if num_RTG in [3,4]:
+					# current design dictates TWO FRONT RTGS!
+					# find where the RTGs are
+					# two RTGS in the front
+					front_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= length + depth),
+					                       np.where(self.Z[:, 0] >= length + depth - 2 * rtg_size))
+					tmp = np.zeros(self.T.shape)
+					tmp[front_rtg_loc.min():front_rtg_loc.max(), r.min():r.max() + 1] = 1
+					frontrtgs = np.where(tmp == 1)
+					# md.headgeom = np.where(tmp == 1)
+
+					# only 1 rear RTG
+					if num_RTG == 3:
+						# one rear RTG
+						rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + rtg_size),
+						                       np.where(self.Z[:,0] >= depth))
+					elif num_RTG == 4:
+						rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + 2*rtg_size),
+						                      np.where(self.Z[:, 0] >= depth))
+
+					tmp = np.zeros(self.T.shape)
+					tmp[rear_rtg_loc.min():rear_rtg_loc.max(), r.min():r.max() + 1] = 1
+					rearrtgs = np.where(tmp==1)
+					self.RTGS = (np.append(frontrtgs[0], rearrtgs[0]),
+					             np.append(frontrtgs[1], rearrtgs[1]))
+				else:
+					pass
+
 		else:
-			self.geom = geometry
+			self.vehicle_geom = geometry
+		return self.vehicle_geom
 
-	def init_intrusion(self, T, depth, thickness, radius, phi=1, geometry='ellipse'):
-		"""
-		Initialize intrusion properties. Updates volume averages after initialization: means we can just initialize
-		temperature and intrusion to get all thermal properties set.
-		**So far this only accounts for a single intrusion at the center of the domain
-			should be simple to add multiples in the future if necessary
+	def init_vehicle(self, depth, length, radius, T, num_RTG=0, temp_regulation=['Constant T'],
+	                 geometry='box', rtg_size=0.6):
+		# Assume vehicle geometry is a rectangle for now
+		print("chosen vehcile geometry=",geometry)
 
-		Parameters:
-			T : float
-				set intrusion to single Temperature value, assuming that it is well mixed
-			depth : float
-				set depth of upper edge of the intrusion, m
-			thickness : float
-				set thickness of intrusion, m
-			radius : float
-				set radius of intrusion, m
-			phi : float [0,1]
-				set liquid fraction of intrusion, generally interested in totally liquid bodies so default = 1
-			geometry : string (see set_intrusion_geom()), array
-				set geometry of intrusion, default is an ellipse
-
-		Usage:
-			Intrusion at pure water melting temperature (273.15 K), emplaced at 2 km depth in the shell, 2 km thick
-			and a radius of 4 km:
-				model.init_intrusion(T=273.15, depth=2e3, thickness=2e3, radius=4e3)
-		"""
-
-		if phi < 0 or phi > 1:
-			raise Exception('liquid fraction must be between 0 and 1')
-
-		# save intrusion properties
-		self.T_int = T
-		self.depth, self.thickness, self.R_int = depth, thickness, radius
-		self.set_intrusion_geom(depth, thickness, radius, geometry)  # get chosen geometry
-		self.T[self.geom] = T  # set intrusion temperature to chosen temperature
-		self.phi[self.geom] = phi  # set intrusion to chosen liquid fraction
-		self.init_volume_averages()  # update volume averages
+		self.vehicle_h = length
+		self.vehicle_w = radius
+		self.vehicle_d = depth
+		self.vehicle_T = T
+		self.vehicle_geom = self.set_vehicle_geom(depth, length, radius, num_RTG, geometry, rtg_size)
+		self.vehicle[self.vehicle_geom] = 1
+		self.T[self.vehicle_geom] = T
+		self.vehicle_heat_scheme = temp_regulation
+		self.init_volume_averages()
 
 	# define a bunch of useful functions for salty systems, unused otherwise
 	# non-linear fit, for larger dT
