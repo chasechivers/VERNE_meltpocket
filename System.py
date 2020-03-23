@@ -7,13 +7,6 @@ import numpy as np
 from scipy import optimize
 from HeatSolver import HeatSolver
 
-# Comment out for pace runs
-# import matplotlib.pyplot as plt
-# import matplotlib.colors as colors
-# import seaborn as sns
-# sns.set(palette='colorblind', color_codes=1, context='notebook', style='ticks')
-
-
 class IceSystem(HeatSolver):
 	"""
 	Class with methods to set up initial conditions for two-dimensional, two-phase thermal diffusion model that
@@ -21,7 +14,7 @@ class IceSystem(HeatSolver):
 	equation utilizing an enthalpy method (Huber et al., 2008) to account for latent heat from phase change as well
 	as a parameterization for a saline system.
 	"""
-	def __init__(self, Lx, Lz, dx, dz, kT=True, cpT=False, use_X_symmetry=False):
+	def __init__(self, Lx, Lz, dx, dz, kT=True, cpT=False, use_X_symmetry=False, Z0=0):
 		"""
 		Initialize the system.
 		Parameters:
@@ -56,20 +49,19 @@ class IceSystem(HeatSolver):
 		self.Lx, self.Lz = Lx, Lz
 		self.dx, self.dz = dx, dz
 		self.nx, self.nz = int(Lx / dx + 1), int(Lz / dz + 1)
-		self.Z = np.linspace(0, self.Lz, self.nz)  # z domain starts at zero, z is positive down
+		self.Z = np.linspace(Z0, Z0+Lz, self.nz, dtype=float) # z domain starts at zero, z is positive down
 		if use_X_symmetry:
 			self.symmetric = True
 			self.Lx = self.Lx / 2
 			self.nx = int(self.Lx / self.dx + 1)
-			self.X = np.linspace(0, self.Lx, self.nx)
-			self.X, self.Z = np.meshgrid(self.X, self.Z)  # create spatial grid
+			self.X = np.array([i * dx for i in range(self.nx)], dtype=float)
 		elif use_X_symmetry is False:
-			self.X = np.linspace(-self.Lx / 2, self.Lx / 2, self.nx)  # x domain centered on 0
-			self.X, self.Z = np.meshgrid(self.X, self.Z)  # create spatial grid
-		self.T = np.ones((self.nz, self.nx))  # initialize domain at one temperature
-		self.S = np.zeros((self.nz, self.nx))  # initialize domain with no salt
-		self.phi = np.zeros((self.nz, self.nx))  # initialize domain as ice
-		self.vehicle = np.zeros((self.nz, self.nx))
+			self.X = np.array([-Lx/2 + i*dx for i in range(self.nx)], dtype=float)  # x domain centered on 0
+		self.X, self.Z = np.meshgrid(self.X, self.Z)  # create spatial grid
+		self.T = np.ones((self.nz, self.nx), dtype=float)  # initialize domain at one temperature
+		self.S = np.zeros((self.nz, self.nx), dtype=float)  # initialize domain with no salt
+		self.phi = np.zeros((self.nz, self.nx), dtype=float)  # initialize domain as ice
+		self.vehicle = np.zeros((self.nz, self.nx), dtype=float)
 		self.kT, self.cpT = kT, cpT  # k(T), cp_i(T) I/O
 		self.issalt = False  # salt I/O
 
@@ -92,7 +84,7 @@ class IceSystem(HeatSolver):
 		# rho_v = mass/(pi * (W/2)**2 * H) = 753.3 kg/m3
 		# seems pretty low....
 		# using aluminum instead
-		rho_v = 3000.  # kg/m3, assumed vehicle density, aluminum-ish
+		rho_v = 753.3 #3000.  # kg/m3, assumed vehicle density, aluminum-ish
 		cp_i = 2.11e3  # J/kgK, pure ice specific heat
 		cp_w = 4.19e3  # J/kgK, pure water specific heat
 		cp_v = 910.01  # J/kgK
@@ -122,7 +114,7 @@ class IceSystem(HeatSolver):
 
 		# Mechanical properties of ice
 		G = 3.52e9  # Pa, shear modulus/rigidity (Moore & Schubert, 2000)
-		E = 1e6  # Pa, Young's Modulus
+		E = 2.66 * G  # Pa, Young's Modulus
 
 	def save_initials(self):
 		""" Save initial values to compare with simulation results. """
@@ -246,6 +238,7 @@ class IceSystem(HeatSolver):
 
 	def set_vehicle_geom(self, depth, length, radius, num_RTG, geometry, rtg_size=0.6):
 		if isinstance(geometry, str):
+			# Assume vehicle geometry is a rectangle for now
 			if geometry == 'box':
 				print('setting geometry')
 				#center = self.vh / 2 + de
@@ -272,6 +265,7 @@ class IceSystem(HeatSolver):
 						rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + rtg_size),
 						                       np.where(self.Z[:,0] >= depth))
 					elif num_RTG == 4:
+						# two rear RTGs
 						rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + 2*rtg_size),
 						                      np.where(self.Z[:, 0] >= depth))
 
@@ -283,23 +277,27 @@ class IceSystem(HeatSolver):
 				else:
 					pass
 
+		# custom geometry?
 		else:
 			self.vehicle_geom = geometry
 		return self.vehicle_geom
 
 	def init_vehicle(self, depth, length, radius, T, num_RTG=0, temp_regulation=['Constant T'],
-	                 geometry='box', rtg_size=0.6):
-		# Assume vehicle geometry is a rectangle for now
-		print("chosen vehcile geometry=",geometry)
-
+	                 geometry='box', rtg_size=0.6, power=1e3):
+		# Probably want to be able to make custom temperature profile/geometry
+		## e.g. High front RTG temperature = ??, 300 K rest of body
+		##      or some step function, polynomial, w/e
 		self.vehicle_h = length
 		self.vehicle_w = radius
 		self.vehicle_d = depth
 		self.vehicle_T = T
+		# Assume vehicle geometry is a rectangle for now
 		self.vehicle_geom = self.set_vehicle_geom(depth, length, radius, num_RTG, geometry, rtg_size)
 		self.vehicle[self.vehicle_geom] = 1
 		self.T[self.vehicle_geom] = T
 		self.vehicle_heat_scheme = temp_regulation
+		if 'Constant Flux' in temp_regulation or 'RTG Flux' in temp_regulation:
+			self.power = power
 		self.init_volume_averages()
 
 	# define a bunch of useful functions for salty systems, unused otherwise
@@ -356,7 +354,6 @@ class IceSystem(HeatSolver):
 		"""
 
 		self.issalt = True  # turn on salinity for solvers
-		self.saturated = 0  # whether liquid is saturated
 		self.rejection_cutoff = rejection_cutoff  # minimum liquid fraction of cell to accept rejected salt
 
 		# composition and concentration coefficients for fits from Buffo et al. (2019)
@@ -406,12 +403,9 @@ class IceSystem(HeatSolver):
 		#  dict structure {chosen composition: {concentration: root}}
 		self.linear_shallow_roots = {composition: {}}
 		for key in self.linear_consts[composition]:
-			self.linear_shallow_roots[composition][key] = optimize.root(lambda x:
-			                                                            self.shallow_fit(x, *
-			                                                            self.shallow_consts[composition][key]) \
-			                                                            - self.linear_fit(x, *
-			                                                            self.linear_consts[composition][key]), 3)['x'][
-				0]
+			root_func = lambda x: self.shallow_fit(x, *self.shallow_consts[composition][key]) \
+			                                  - self.linear_fit(x, *self.linear_consts[composition][key])
+			self.linear_shallow_roots[composition][key] = optimize.root(root_func, 3)['x'][0]
 
 		self.composition = composition
 		self.concentration = concentration
@@ -440,68 +434,25 @@ class IceSystem(HeatSolver):
 		# save array of concentrations for chosen composition for entraining salt in ice
 		self.concentrations = np.sort([key for key in self.shallow_consts[composition]])
 
-		if S is not None:
-			# method for custom salinity + brine inclusion
-			self.S = S
-			self.S += self.phi * concentration
-
-		if shell:
-			# method for a salinity/depth profile via Buffo et al. 2019
-			s_depth = lambda z, a, b, c: a + b / (c - z)
-			self.S = s_depth(self.Z, *self.depth_consts[composition][concentration])
-
-			if in_situ is False:  # for water emplaced in a salty shell
-				self.S += self.phi * concentration
-			else:  # must redistribute the salt evenly to simulate real in-situ melting
-				print('Redistributing salt in intrusion')
-				try:
-					S_int_tot = self.S[self.geom].sum()
-					self.S[self.geom] = S_int_tot / np.shape(self.geom)[1]
-					if self.S[self.geom].sum() / S_int_tot > 1.0 + 1e-15 or \
-							self.S[self.geom].sum() / S_int_tot < 1.0 - 1e-15:
-						print('S_int_new/Si =', self.S[self.geom].sum() / S_int_tot)
-						raise Exception('problem with salt redistribution')
-				except AttributeError:
-					pass
-
-			# update temperature profile to reflect bottom boundary condition
-			if T_match:
-				self.Tbot = self.Tm_func(s_depth(self.Lz, *self.depth_consts[composition][concentration]),
-				                         *self.Tm_consts[composition])
-				print('--Adjusting temperature profile: Tsurf = {}, Tbot = {}'.format(self.Tsurf, self.Tbot))
-				self.init_T(Tsurf=self.Tsurf, Tbot=self.Tbot)
-			else:
-				pass
-
-		else:
-			# homogeneous brine, pure ice shell
-			self.S = self.phi * concentration
-
-			if T_match:
-				self.Tbot = self.Tm_func(concentration, *self.Tm_consts[composition])
-				print('--Pure shell; adjusting temperature profile: Tsurf = {}, Tbot = {}'.format(self.Tsurf,
-				                                                                                  self.Tbot))
-				self.init_T(Tsurf=self.Tsurf, Tbot=self.Tbot)
-			else:
-				pass
+		# method for a salinity/depth profile via Buffo et al. 2020
+		s_depth = lambda z, a, b, c: a + b / (c - z)
+		self.S = s_depth(self.Z, *self.depth_consts[composition][concentration])
 
 		# update initial melting temperature
 		self.Tm = self.Tm_func(self.S, *self.Tm_consts[composition])
+		# update temperature profile to reflect ocean salinity
+		self.Tbot = self.Tm_func(s_depth(self.Lz, *self.depth_consts[composition][concentration]),
+		                         *self.Tm_consts[composition])
+		print("-- Adjusting temperature profile")
+		self.init_T(Tsurf=self.Tsurf, Tbot=self.Tbot, real_Lz=self.real_Lz)
+
 		# update volume average with included salt
 		self.init_volume_averages()
 		# begin tracking mass
 		self.total_salt = [self.S.sum()]
 		# begin tracking amount of salt removed from system
-		self.removed_salt, self.mass_removed, self.ppt_removed = [0], [0], [0]
-		self.wat_vol = [self.geom[1].shape[0]]
+		self.removed_salt = [0]
 
-		# update temperature of liquid to reflect salinity
-		try:
-			self.T_int = self.Tm_func(self.S[self.geom], *self.Tm_consts[composition])[0]
-			print('--Updating intrusion temperature to reflect initial salinity, Tint =', self.T_int)
-			self.T[self.geom] = self.T_int
-		except AttributeError:
-			pass
 		self.save_initials()
 
 	def entrain_salt(self, dT, S, composition):

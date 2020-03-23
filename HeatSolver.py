@@ -5,141 +5,11 @@ import numpy as np
 import time as _timer_
 from utility_funcs import *
 import string, random, os
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from scipy import optimize
 
 
-class outputs:
-	"""Class structure to help define and calculate desired outputs of a simulation."""
-
-	def __init__(self):
-		self.outputs.tmp_data_directory = ''
-		self.outputs.tmp_data_file_name = ''
-		self.outputs.transient_results = dict()
-		self.outputs.output_frequency = 0
-
-	def choose(self, all=False, T=False, phi=False, k=False, S=False, Q=False, h=False, r=False,
-	           freeze_fronts=False, percent_frozen=False, output_frequency=1000, output_list=[]):
-		"""
-		Choose which outputs to track with time. Each variable is updated at the chosen output frequency and is
-		returned in the dictionary object outputs.transient_results.
-		Parameters:
-			output_frequency : integer
-				the frequency to report a transient result. Default is every 1000 time steps
-			output_list : list
-				list of strings for the outputs below. Generally used for simulation that had stopped (i.e. hit a
-				wall time) without desired
-			all : bool
-				turns on all outputs listed below
-			T, phi, k, S, Q : bool
-				tracks and returns an array of temperature, liquid fraction, volume averaged thermal conductivity,
-				salinity, and source/sink grids, respectively
-			h : bool
-				tracks the height (thickness) of the liquid intrusion over time into a 1d array
-			r : bool
-				tracks the radius of the liquid portion over time into a 1d array
-			freeze_fronts : bool
-				tracks the propagating freeze front at the top and bottom of the intrusion into a 1d array
-			percent_frozen : bool
-				tracks and returns a 1d list of the percent of the original intrusion that is now ice
-		Usage:
-			Output all options every 50 years
-				model.outputs.choose(model, all=True, output_frequency=int(50 * model.constants.styr/model.dt))
-
-			Output only temperature grids and salinity at every time step
-				model.outputs.choose(model, T=True, S=True, output_frequency=1)
-				--or--
-				model.outputs.choose(model, output_list=['T','S'], output_frequency=1);
-		"""
-		to_output = {'time': True, 'T': T, 'phi': phi, 'k': k, 'S': S, 'Q': Q, 'h': h, 'freeze fronts':
-			freeze_fronts, 'r': r, 'percent frozen': percent_frozen}
-		if all:
-			to_output = {key: True for key, value in to_output.items()}
-
-		if len(output_list) != 0:
-			to_output = {key: True for key in output_list}
-			to_output['time'] = True
-
-		self.outputs.transient_results = {key: [] for key in to_output if to_output[key] is True}
-		self.outputs.outputs = self.outputs.transient_results.copy()
-
-		self.outputs.output_frequency = output_frequency
-		self.outputs.tmp_data_directory = './tmp/'
-		self.outputs.tmp_data_file_name = 'tmp_data_runID' + ''.join(random.choice(string.digits) for _ in range(4))
-
-	def calculate_outputs(self, n):
-		"""
-		Calculates the output and appends it to the list for chosen outputs. See outputs.choose() for description
-		of values calculated here.
-		Parameters:
-			n : integer
-				nth time step during simulation
-		Returns:
-			ans : dictionary object
-				dictionary object with chosen outputs as 1d numpy arrays
-		"""
-		ans = {}
-		for key in self.outputs.outputs:
-			if key == 'time':
-				ans[key] = self.model_time
-			if key == 'percent frozen':
-				ans[key] = 1 - (self.phi[self.geom].sum()) / len(self.geom[1])
-			if key == 'r':
-				tmp = np.where(self.phi > 0)
-				ans[key] = self.dx * max(tmp[1])
-				del tmp
-			if key == 'h':
-				tmp = np.where(self.phi > 0)
-				ans[key] = (max(tmp[0]) - min(tmp[0])) * self.dz
-				del tmp
-			if key == 'freeze fronts':
-				tmp = np.where(self.phi > 0)
-				ans[key] = np.array([min(tmp[0]), max(tmp[0])]) * self.dz
-				del tmp
-			if key == 'T':
-				ans[key] = self.T.copy()
-			if key == 'S':
-				ans[key] = self.S.copy()
-			if key == 'phi':
-				ans[key] = self.phi.copy()
-			if key == 'k':
-				ans[key] = self.k.copy()
-			if key == 'Q':
-				ans[key] = self.Q.copy()
-		return ans
-
-	def get_results(self, n):
-		"""Calls outputs.calculate_outputs() then saves dictionary of results to file"""
-		if n % self.outputs.output_frequency == 0:
-			get = self.outputs.calculate_outputs(self, n)
-			save_data(get, self.outputs.tmp_data_file_name + '_n={}'.format(n), self.outputs.tmp_data_directory)
-
-	def get_all_data(self, del_files=True):
-		"""Concatenates all saved outputs from outputs.get_results() and puts into a single dictionary object."""
-		cwd = os.getcwd()  # find working directory
-		os.chdir(self.outputs.tmp_data_directory)  # change to directory where data is being stored
-
-		# make a list of all results files in directory
-		data_list = nat_sort([data for data in os.listdir() if data.endswith('.pkl') and \
-		                      self.outputs.tmp_data_file_name in data])
-		# copy dictionary of desired results
-		ans = self.outputs.transient_results.copy()
-		# iterate over file list
-		for file in data_list:
-			tmp_dict = load_data(file)  # load file
-			for key in self.outputs.outputs:  # iterate over desired outputs
-				ans[key].append(tmp_dict[key])  # add output from result n to final file
-			del tmp_dict
-			if del_files: os.remove(file)
-
-		# make everything a numpy array for easier manipulation
-		ans = {key: np.asarray(value) for key, value in ans.items()}
-
-		# go back to working directory
-		os.chdir(cwd)
-		return ans
-
-class HeatSolver(outputs):
+class HeatSolver:
 	"""
 	Solves two-phase thermal diffusivity problem with a temperature-dependent thermal conductivity of ice in
 	two-dimensions. Sources and sinks include latent heat of fusion and tidal heating
@@ -169,6 +39,126 @@ class HeatSolver(outputs):
 	freezestop = 0  # stop simulation upon total solidification of intrusion
 	model_time = 0
 	run_time = 0
+
+	class outputs:
+		"""Class structure to help define and calculate desired outputs of a simulation."""
+
+		def __init__(self):
+			self.outputs.tmp_data_directory = ''
+			self.outputs.tmp_data_file_name = ''
+			self.outputs.transient_results = dict()
+			self.outputs.output_frequency = 0
+
+		def choose(self, all=False, T=False, phi=False, k=False, S=False, Q=False, V=False,
+		           output_frequency=1000, output_list=[]):
+			"""
+			Choose which outputs to track with time. Each variable is updated at the chosen output frequency and is
+			returned in the dictionary object outputs.transient_results.
+			Parameters:
+				output_frequency : integer
+					the frequency to report a transient result. Default is every 1000 time steps
+				output_list : list
+					list of strings for the outputs below. Generally used for simulation that had stopped (i.e. hit a
+					wall time) without desired
+				all : bool
+					turns on all outputs listed below
+				T, phi, k, S, Q : bool
+					tracks and returns an array of temperature, liquid fraction, volume averaged thermal conductivity,
+					salinity, and source/sink grids, respectively
+				h : bool
+					tracks the height (thickness) of the liquid intrusion over time into a 1d array
+				r : bool
+					tracks the radius of the liquid portion over time into a 1d array
+				freeze_fronts : bool
+					tracks the propagating freeze front at the top and bottom of the intrusion into a 1d array
+				percent_frozen : bool
+					tracks and returns a 1d list of the percent of the original intrusion that is now ice
+			Usage:
+				Output all options every 50 years
+					model.outputs.choose(model, all=True, output_frequency=int(50 * model.constants.styr/model.dt))
+
+				Output only temperature grids and salinity at every time step
+					model.outputs.choose(model, T=True, S=True, output_frequency=1)
+					--or--
+					model.outputs.choose(model, output_list=['T','S'], output_frequency=1);
+			"""
+			to_output = {'time': True, 'T': T, 'phi': phi, 'k': k, 'S': S, 'Q': Q, 'V': V}
+			if all:
+				to_output = {key: True for key, value in to_output.items()}
+
+			if len(output_list) != 0:
+				to_output = {key: True for key in output_list}
+				to_output['time'] = True
+
+			self.outputs.transient_results = {key: [] for key in to_output if to_output[key] is True}
+			self.outputs.outputs = self.outputs.transient_results.copy()
+
+			self.outputs.output_frequency = output_frequency
+			self.outputs.tmp_data_directory = './tmp/'
+			self.outputs.tmp_data_file_name = 'tmp_data_runID' + ''.join(random.choice(string.digits) for _ in range(4))
+
+		def calculate_outputs(self, n):
+			"""
+			Calculates the output and appends it to the list for chosen outputs. See outputs.choose() for description
+			of values calculated here.
+			Parameters:
+				n : integer
+					nth time step during simulation
+			Returns:
+				ans : dictionary object
+					dictionary object with chosen outputs as 1d numpy arrays
+			"""
+			ans = {}
+			for key in self.outputs.outputs:
+				if key == 'time':
+					ans[key] = self.model_time
+				if key == 'T':
+					ans[key] = self.T.copy()
+				if key == 'S':
+					ans[key] = self.S.copy()
+				if key == 'phi':
+					ans[key] = self.phi.copy()
+				if key == 'k':
+					ans[key] = self.k.copy()
+				if key == 'Q':
+					ans[key] = self.Q.copy()
+				if key == 'V':
+					ans[key] = self.vehicle.copy()
+			return ans
+
+		def get_results(self, n, extra=False):
+			"""Calls outputs.calculate_outputs() then saves dictionary of results to file"""
+			if n % self.outputs.output_frequency == 0:
+				get = self.outputs.calculate_outputs(self, n)
+				save_data(get, self.outputs.tmp_data_file_name + '_n={}'.format(n), self.outputs.tmp_data_directory)
+			if extra:
+				get = self.outputs.calculate_outputs(self, n)
+				save_data(get, self.outputs.tmp_data_file_name + "_n={}".format(n), self.outputs.tmp_data_directory)
+
+		def get_all_data(self, del_files=True):
+			"""Concatenates all saved outputs from outputs.get_results() and puts into a single dictionary object."""
+			cwd = os.getcwd()  # find working directory
+			os.chdir(self.outputs.tmp_data_directory)  # change to directory where data is being stored
+
+			# make a list of all results files in directory
+			data_list = nat_sort([data for data in os.listdir() if data.endswith('.pkl') and \
+			                      self.outputs.tmp_data_file_name in data])
+			# copy dictionary of desired results
+			ans = self.outputs.transient_results.copy()
+			# iterate over file list
+			for file in data_list:
+				tmp_dict = load_data(file)  # load file
+				for key in self.outputs.outputs:  # iterate over desired outputs
+					ans[key].append(tmp_dict[key])  # add output from result n to final file
+				del tmp_dict
+				if del_files: os.remove(file)
+
+			# make everything a numpy array for easier manipulation
+			ans = {key: np.asarray(value) for key, value in ans.items()}
+
+			# go back to working directory
+			os.chdir(cwd)
+			return ans
 
 	def set_boundaryconditions(self, top=True, bottom=True, sides=True, **kwargs):
 		"""
@@ -221,7 +211,7 @@ class HeatSolver(outputs):
 			#                   * (self.T_initial[1, 1:-1] - self.T_initial[0,1:-1])
 			self.std_set = 0
 		if top == "Flux":
-			self.T_top_out = kwargs['Top_out']*np.ones(T[0,:].shape)
+			self.T_top_out = kwargs['Top_out'] * np.ones(self.T[0, :].shape)
 
 		self.botBC = bottom
 		if bottom == 'FluxI' or bottom == 'FluxW':
@@ -238,23 +228,95 @@ class HeatSolver(outputs):
 				raise Exception('Length for right side flux not chosen\n\t->model.set_boundaryconditions('
 				                'sides=\'RFlux\', dL=500e3)')
 
+	def update_salinity(self, phi_last, grad_mean='arithmetic'):
+		# find indices where ice has just formed
+		z_newice, x_newice = np.where((phi_last > 0) * (self.phi == 0))
+		# get indices of cells that can accept rejected salts
+		water = np.where(self.phi >= self.rejection_cutoff)
+		# calculate "volume" of cells that can accept rejected salt
+		vol = water[1].shape[0]
+		# start catalogue of TOTAL salt removed from system after water is saturated
+		self.removed_salt.append(0)
+
+		if len(z_newice) > 0 and vol != 0:  # if new ice has formed...
+			Sn = self.S.copy()  # new S matrix
+			for i in range(len(z_newice)):  # iterate over cells where ice has just formed
+				# save location of cell
+				loc = (z_newice[i], x_newice[i])
+				# get starting salinity in cell
+				S_old = self.S[loc]
+				# calculate centered thermal gradients across each cell
+				if self.symmetric and loc[1] in [0, self.nx-1]:
+					grad_x = 0
+				else:
+					grad_x = abs(self.T[loc[0], loc[1] - 1] - self.T[loc[0], loc[1] + 1]) / 2 / self.dx
+				grad_z = (self.T[loc[0] - 1, loc[1]] - self.T[loc[0] + 1, loc[1]]) / 2 / self.dz
+
+				# brine drainage paramterization:
+				## if grad_z > 0 (water above cell) => no drainage, salt stays
+				if grad_z > 0:
+					self.S[loc] = S_old
+
+				## if grad_z < 0 (watler below cell) => brien drains, reject salt
+				elif grad_z < 0:
+					# determine "mean" temperature gradient across cell
+					if grad_mean == "arithmetic":
+						grad = (abs(grad_z) + abs(grad_x)) / 2
+					elif grad_mean == "geometric":
+						grad = np.sqrt(grad_x * abs(grad_z))
+					elif grad_mean == "harmonic":
+						grad = 2. / (1. / grad_x + 1. / abs(grad_z))
+					elif grad_mean == "max":
+						grad = max(grad_x, abs(grad_z))
+					elif grad_mean == "across":
+						grad = np.hypot(grad_x, grad_z)
+
+					self.S[loc] = self.entrain_salt(grad, S_old, self.composition)
+
+			# assume salt is well mixed into remaining liquid solution in time step dt
+			self.S[water] = self.S[water] + (Sn.sum() - self.S.sum()) / vol
+
+			# remove salt from system if liquid is above the saturation point
+			self.removed_salt[-1] += (self.S[self.S >= self.saturation_point] - self.saturation_point).sum()
+
+			# ensure liquid hits only the saturation concentration
+			self.S[self.S > self.saturation_point] = self.saturation_point
+
+		# check salt conservation
+		total_S_new = self.S.sum() + np.asarray(self.removed_salt).sum()
+		if abs(total_S_new - self.total_salt[0]) <= self.Stol:
+			self.total_salt.append(total_S_new)
+		else:
+			self.total_salt.append(total_S_new)
+			raise Exception('Mass not being conserved')
+
+	def remix_salt_melted_ice(self, phi_last):
+		loc = np.where((phi_last < 1) & (self.phi==1))
+		#print(loc)
+		if len(loc[0]) > 0:
+			water = np.where(self.phi >= self.rejection_cutoff)
+			vol = water[1].shape[0]
+			self.S[water] = self.S[water].sum() / vol
+		else:
+			pass
+
 	def adjust_domain(self):
 		"""adjust the domain as the vehicle passes further into the shell"""
 		# create new "blank" matrices for each variable that must be adjusted
 		# only Z direction must be adjusted
-		Znew = np.zeros(Z.shape)
+		Znew = np.zeros(self.Z.shape)
 		Znew[:-1, :] = self.Z[1:, :].copy()
-		Znew[-1, :] = Znew[-2,:] + self.dz
+		Znew[-1, :] = Znew[-2, :] + self.dz
 		self.Z = Znew.copy()
 		del Znew
 
 		# now adjust T
-		Tnew= np.zeros(self.T.shape)
-		Tnew[:-1,:] = self.T[1:,:].copy()
+		Tnew = np.zeros(self.T.shape)
+		Tnew[:-1, :] = self.T[1:, :].copy()
 		# However, must make the "newly added" bottom ice at the right temperature!
 		Tbot = self.Tsurf * (self.Tbot / self.Tsurf) ** ((self.Lz + self.dz) / self.real_Lz)
 		Tnew[-1, :] = Tbot
-		Ttop = self.T[0,:]
+		Ttop = self.T[0, :]
 		self.T = Tnew
 
 		# adjust boundary conditions
@@ -268,14 +330,14 @@ class HeatSolver(outputs):
 		self.set_boundaryconditions(top="Flux", bottom=True, sides=self.sidesBC, Top_out=Ttop)
 
 		# it should still be the same for phi
-		phinew[:-1,:] = self.phi[1:,:].copy()
+		phinew[:-1, :] = self.phi[1:, :].copy()
 		self.phi = phinew.copy()
 
 		# and the new vehicle position
-		vnew[:-1,:] = self.vehicle[1:,:].copy()
+		vnew[:-1, :] = self.vehicle[1:, :].copy()
 		self.vehicle = vnew.copy()
 		# BUT! I have to make sure the vehcile geometry is adjusted?
-		self.vehicle_geom = np.where(self.vehicle==1)
+		self.vehicle_geom = np.where(self.vehicle == 1)
 
 		# adjust volume averages
 		self.update_volume_averages()
@@ -283,53 +345,100 @@ class HeatSolver(outputs):
 
 	def update_vehicle_position(self):
 		# vehicle melts through layer dz at front, move the vehicle down by dz
-		widx = int(self.vehicle_w/self.dx)
-		hidx = int(self.vehicle_h/self.dz)+1
-		if self.phi[self.vehicle_geom[0][-widx:]+1, self.vehicle_geom[1][-widx:]].all() == 1:
+		# widx = int(self.vehicle_w/self.dx)
+		# hidx = int(self.vehicle_h/self.dz)+1
+		widx = self.vehicle_geom[1].max()  # index of vehicle width
+		hidx = self.vehicle_geom[0].max()  # index for vehicle front
+		bidx = self.vehicle_geom[0].min()  # index for vehicle back
+		Zidxs, Xidxs = self.vehicle_geom[0][-widx:] + 1, self.vehicle_geom[1][-widx:]
+		if Xidxs[0] == 1:  # likely using X-symmetry
+			Xidxs = self.vehicle_geom[1][:widx + 1]
+			Zidxs = np.array([int(Zidxs[0]) for i in Xidxs], dtype=int)
+
+		if self.phi[Zidxs, Xidxs].sum() == len(Xidxs):
 			# save the temperature profile of vehicle
-			Tsave = self.T[self.vehicle_geom[0][-widx:]+1, self.vehicle_geom[1][-widx:]]
+			Tsave = self.T[Zidxs, Xidxs]
+			phisave = self.phi[Zidxs, Xidxs]
+			if self.issalt: Ssave = self.S[Zidxs, Xidxs]
 			# move vehicle down
-			self.vehicle[self.vehicle_geom[0][-widx:]+1, self.vehicle_geom[1][-widx:]] = 1
-			self.vehicle[self.vehicle_geom[0][-widx:]-hidx, self.vehicle_geom[1][-widx:]] = 0
+			self.vehicle[Zidxs, Xidxs] = 1
+			self.vehicle[bidx, Xidxs] = 0
+			# reassign T to "behind nose"
+			self.T[hidx, Xidxs] = Tsave
+			# reassign water to "behind  nose"
+			self.phi[hidx, Xidxs] = phisave
+			# move salt??
+			if self.issalt: self.S[hidx, Xidxs] = Ssave
+			"""
+			OLD WAY OF DOING THINGS!!
 			# reassign T to new vehicle position
-			self.T[self.vehicle_geom[0][-widx:]-hidx, self.vehicle_geom[1][-widx:]] = Tsave
+			#self.T[bidx, Xidxs] = Tsave
+			
 			# move water at nose to behind vehicle
-			self.phi[self.vehicle_geom[0][-widx:]-hidx, selfvehicle_.geom[1][-widx:]] = 1
+			#self.phi[bidx, Xidxs] = phisave
+			# move salt??
+			#if self.issalt: self.S[bidx, Xidxs] = Ssave
+			"""
 			# save geometry of vehicle in current position
 			self.vehicle_geom = np.where(self.vehicle == 1)
 			# adjust the domain further into the ice shell
-			self.adjust_domain()
+			# self.adjust_domain()
+			# make sure everything else catches up like heat and thermal props
+			self.update_volume_averages()
+			self.vehicle_temp_scheme()
 			# calculate some stuff about moving down
-			dnose = np.where(self.vehicle==1)[0][-1]*self.dz
+			dnose = np.where(self.vehicle == 1)[0][-1] * self.dz
 			print('Vehicle moved down:\n\t t = {}s, dnose = {} m, v = {} km/yr'.format(
-					self.model_time, dnose, (dnose-self.vd-self.vh)*3.154e4/self.model_time))
-		return 0
+				self.model_time, dnose, (dnose - self.vehicle_d - self.vehicle_h) * 3.154e4 / self.model_time))
+			#print('Vehicle moved down:\n\t t = {}s, dnose = {} m, v = {} km/yr'.format(
+			#		self.model_time, dnose, (dnose - self.vehicle_d - self.vehicle_h) * 3.154e4 / self.model_time))
+
+			return 1
+		else:
+			return 0
+
+	def TmPfunc(self):
+		if self.issalt:
+			rho = self.phi * (self.constants.rho_w + self.C_rho * self.S) \
+			      + (1 - self.phi) * (self.constants.rho_i + self.Ci_rho * self.S)
+		else:
+			rho = self.phi * self.constants.rho_w + (1 - self.phi) * self.constants.rho_i
+			rho[self.vehicle == 1] = self.constants.rho_v
+		pressure = np.zeros(rho.shape, dtype=float)
+		if self.Z[0, 0] > 0:
+			pressure[0, :] = self.constants.rho_i * self.constants.g + self.Z[0, 0]
+		else:
+			pressure[0, :] = rho[0, :] * self.constants.g * self.dz / 2.
+		for i in range(1, self.nz):
+			pressure[i] = pressure[i - 1] + rho[i] * self.constants.g * self.dz
+		return - 0.0132 * pressure * 1e-5 - 0.1577 * np.log(pressure * 1e-5) + 0.1516 * np.sqrt(pressure * 1e-5)
 
 	def update_liquid_fraction(self, phi_last):
 		"""Application of Huber et al., 2008 enthalpy method. Determines volume fraction of liquid/solid in a cell."""
-
 		# update melting temperature for enthalpy if salt is included in simulation
 		if self.issalt:
 			self.Tm = self.Tm_func(self.S, *self.Tm_consts[self.composition])
 		# calculate new enthalpy of solid ice
+		else:
+			self.Tm = self.Tm + (self.TmPfunc() if self.use_pressure else 0)
 		Hs = self.cp_i * self.Tm  # update entalpy of solid ice
+		Hl = Hs + self.constants.Lf
 		H = self.cp_i * self.T + self.constants.Lf * phi_last  # calculate the enthalpy in each cell
 		# update liquid fraction
 		self.phi[H >= Hs] = (H[H >= Hs] - Hs[H >= Hs]) / self.constants.Lf
-		self.phi[H <= Hs + self.constants.Lf] = (H[H <= Hs + self.constants.Lf] - Hs[
-			H <= Hs + self.constants.Lf]) / self.constants.Lf
+		self.phi[H <= Hl] = (H[H <= Hl] - Hs[H <= Hl]) / self.constants.Lf
 		# all ice
 		self.phi[H < Hs] = 0.
 		# all water
-		self.phi[H > Hs + self.constants.Lf] = 1
+		self.phi[H > Hl] = 1
 
 	def update_volume_averages(self):
 		"""Updates volume averaged thermal properties."""
 		if self.kT:
-			self.k = (1 - self.phi) * self.constants.ki + self.phi * self.constants.kw
-		else:
 			self.k = (1 - self.phi) * self.constants.ac / self.T + self.phi * self.constants.kw
-			self.k[self.vehicle == 1] = self.constants.kv
+		else:
+			self.k = (1 - self.phi) * self.constants.ki + self.phi * self.constants.kw
+		self.k[self.vehicle == 1] = self.constants.kv
 
 		if self.cpT == "GM89":
 			"Use temperature-dependent specific heat for pure ice from Grimm & McSween 1989"
@@ -352,23 +461,23 @@ class HeatSolver(outputs):
 			self.rhoc[self.vehicle == 1] = self.constants.rho_v * self.constants.cp_v
 
 	def vehicle_temp_scheme(self):
-		if self.vehicle_heat_scheme == 'Constant T':
-			self.T[self.vehicle_geom] = self.vehicle_temp
-		elif self.vehicle_heat_scheme == 'Constant q':
-			c = self.dt / (self.dx * self.dz * self.rhoc[self.vehicle_geom])
-			Qv = self.k[self.vehicle_geom] * (self.vehicle_temp - self.T[self.vehicle_geom]) * C
+		if 'Constant T' in self.vehicle_heat_scheme:
+			self.T[self.vehicle_geom] = self.vehicle_T
+		elif 'Constant Flux' in self.vehicle_heat_scheme:
+			# c = self.dt / (self.dx * self.dz * self.rhoc[self.vehicle_geom])
+			Qv = self.power  # self.k[self.vehicle_geom] * (self.vehicle_T - self.T[self.vehicle_geom]) * C
 			self.Q[self.vehicle_geom] += Qv
-		elif self.vehicle_heat_scheme == 'RTG T':
-			self.T[self.RTGS] = self.vehicle_temp
-		elif self.vehicle_heat_scheme == 'RTG Flux':
-			c = self.dt / (self.dx * self.dz * self.rhoc[self.RTGS])
-			Qr = self.k[self.RTGS] * (self.vehicle_temp - self.T[self.RTGS]) * c
+		elif 'RTG T' in self.vehicle_heat_scheme:
+			self.T[self.RTGS] = self.vehicle_T
+		elif 'RTG Flux' in self.vehicle_heat_scheme:
+			# c = self.dt / (self.dx * self.dz * self.rhoc[self.RTGS])
+			Qv = self.power
 			self.Q[self.RTGS] += Qv
 
 	def update_sources_sinks(self, phi_last, T_last):
 		"""Updates external heat or heat-sinks during simulation."""
 		self.latent_heat = self.constants.rho_i * self.constants.Lf * (
-					self.phi[1:-1, 1:-1] - phi_last[1:-1, 1:-1]) / self.dt
+				self.phi[1:-1, 1:-1] - phi_last[1:-1, 1:-1]) / self.dt
 
 		self.tidal_heat = 0
 		if self.tidalheat:
@@ -381,6 +490,7 @@ class HeatSolver(outputs):
 			            + phi_last[1:-1, 1:-1] * self.constants.visc0w
 			self.tidal_heat = (self.constants.eps0 ** 2 * self.constants.omega ** 2 * self.visc) / (
 					2 + 2 * self.constants.omega ** 2 * self.visc ** 2 / (self.constants.G ** 2))
+
 		total = self.tidal_heat - self.latent_heat
 		total[self.vehicle[1:-1, 1:-1] == 1] = 0
 
@@ -404,14 +514,22 @@ class HeatSolver(outputs):
 					- (k_last[-1, 1:-1] + k_last[-2, 1:-1]) * (T_last[-1, 1:-1] - T_last[-2, 1:-1]))
 			self.T[-1, 1:-1] = T_last[-1, 1:-1] + Tbotx + Tbotz + self.Q[-1, :] * 2 * c
 
+		elif self.botBC == 'Ocean':
+			c = self.dt / 2 / rhoc_last[-1, 1:-1]
+			Tbotx = c / self.dx ** 2 * ((k_last[-1, 1:-1] + k_last[-1, 2:]) * (T_last[-1, 2:] - T_last[-1, 1:-1]) \
+			                            - (k_last[-1, 1:-1] + k_last[-1, :-2]) * (T_last[-1, 1:-1] - T_last[-1, :-2]))
+			Tbotz = c * ((k_last[-1, 1:-1] + self.constants.kw) * (273.15 - T_last[-1, 1:-1]) \
+			             - (k_last[-1, 1:-1] + k_last[-2, 1:-1]) * (T_last[-1, 1:-1] - T_last[-2, 1:-1])) / self.dz ** 2
+			self.T[-1, 1:-1] = T_last[-1, 1:-1] = Tbotx + Tbotz + self.Q[-1, :] * 2 * c
+
 		# apply chosen boundary conditions at top of domain
 		if self.topBC == True:
 			self.T[0, 1:-1] = self.TtopBC[1:-1]
 
 		elif self.topBC == 'Flux':
-
+			T_top_out = self.T_top_out[1:-1]
 			if self.cpT is True:
-				Cbc = rhoc_last[0, 1:-1] / (self.constants.rho_i * (185. + 2 * 7.037 * self.T_top_out))
+				Cbc = rhoc_last[0, 1:-1] / (self.constants.rho_i * (185. + 2 * 7.037 * T_top_out))
 			else:
 				Cbc = 1
 			c = self.dt / (2 * rhoc_last[0, 1:-1])
@@ -419,19 +537,20 @@ class HeatSolver(outputs):
 			                            - (k_last[0, 1:-1] + k_last[0, :-2]) * (T_last[0, 1:-1] - T_last[0, :-2]))
 			Ttopz = c / self.dz ** 2 * ((k_last[0, 1:-1] + k_last[1, 1:-1]) * (T_last[1, 1:-1] - T_last[0, 1:-1]) \
 			                            - (k_last[0, 1:-1] + Cbc * self.constants.ac / T_top_out) * (
-					                            T_last[0, 1:-1] - T_top_out[1:-1]))
+					                            T_last[0, 1:-1] - T_top_out))
 			self.T[0, 1:-1] = T_last[0, 1:-1] + Ttopx + Ttopz + self.Q[0, :] * 2 * c
 
 		elif self.topBC == 'Radiative':
 			c = self.dt / (2 * rhoc_last[0, :])
-			rad = self.dz * self.constants.stfblt * self.constants.emiss * (T_last[0,:]**4 - self.Tsurf**4)
-			Ttopz = c/self.dz**2 * ((k_last[0,:] + k_last[1,:])*(T_last[1,:] - T_last[0,:]) \
-			                        - (self.k_initial[0,:]+self.k_initial[1,:])*(self.T_initial[1,:]-self.Tsurf))
+			rad = self.dz * self.constants.stfblt * self.constants.emiss * (T_last[0, :] ** 4 - self.Tsurf ** 4)
+			Ttopz = c / self.dz ** 2 * ((k_last[0, :] + k_last[1, :]) * (T_last[1, :] - T_last[0, :]) \
+			                            - (self.k_initial[0, :] + self.k_initial[1, :]) * (
+						                            self.T_initial[1, :] - self.Tsurf))
 			Ttopx = 1 / self.dx ** 2 * ((k_last[0, 1:-1] + k_last[0, 2:]) * (T_last[0, 2:] - T_last[0, 1:-1]) \
 			                            - (k_last[0, 1:-1] + k_last[0, :-2]) * (T_last[0, 1:-1] - T_last[0, :-2]))
 
-			self.T[0, :] = T_last[0, :] + Ttopz - rad * c/self.dz**2
-			self.T[0,1:-1] += (Ttopx + self.Q[0, :] * 2)*self.dt/(2*rhoc_last[0, 1:-1])
+			self.T[0, :] = T_last[0, :] + Ttopz - rad * c / self.dz ** 2
+			self.T[0, 1:-1] += (Ttopx + self.Q[0, :] * 2) * self.dt / (2 * rhoc_last[0, 1:-1])
 		# else:
 		#	self.T[0, 1:-1] = self.Tsurf
 
@@ -447,7 +566,6 @@ class HeatSolver(outputs):
 		elif self.sidesBC == 'RFlux':
 			# left side of domain uses 'NoFlux'
 			self.T[:, 0] = T_last[:, 1].copy()
-
 			# right side of domain
 			c = self.dt / (2 * rhoc_last[1:-1, -1])
 			TRX = c * ((k_last[1:-1, -1] + self.constants.ac / self.Tedge[1:-1]) * \
@@ -512,10 +630,11 @@ class HeatSolver(outputs):
 		print('\t    ci(T):    {}'.format(stringIO(self.cpT)))
 		print('\t intrusion/salt:')
 		try:
-			self.geom
-			print(f'\t    radius:    {self.R_int}m')
-			print(f'\t    thickness: {self.thickness}m')
-			print(f'\t    depth:     {self.depth}m')
+			self.vehicle_geom
+			print('\n\t    width:             {self.vehicle_w} m')
+			print('\n\t    length:            {self.vehicle_h} m')
+			print('\n\t    initial depth:     {self.vehicle_d} m')
+			print('\n\t    heat scheme:       {self.vehicle_heat_scheme}')
 		except:
 			pass
 		print('\t    salinity: {}'.format(stringIO(self.issalt)))
@@ -530,7 +649,7 @@ class HeatSolver(outputs):
 		except AttributeError:
 			print('no outputs requested')
 
-	def solve_heat(self, nt, dt, print_opts=True, n0=0):
+	def solve_heat(self, nt, dt, print_opts=True, n0=0, move=1, use_pressure=0):
 		"""
 		Iteratively solve heat two-dimension heat diffusion problem with temperature-dependent conductivity of ice.
 		Parameters:
@@ -547,6 +666,7 @@ class HeatSolver(outputs):
 			Run simulation for 1000 time steps with dt = 300 s
 				model.solve_heat(nt=1000, dt=300)
 		"""
+		self.use_pressure = use_pressure
 		self.dt = dt
 		start_time = _timer_.clock()
 		self.num_iter = []
@@ -560,20 +680,22 @@ class HeatSolver(outputs):
 			while (TErr > self.Ttol and phiErr > self.phitol):
 				Tx, Tz = self.get_gradients(T_last)
 				self.update_liquid_fraction(phi_last=phi_last)
-				if self.issalt: self.saturated = self.update_salinity(phi_last=phi_last)
+				if self.issalt:
+					self.remix_salt_melted_ice(phi_last=phi_last)
+					self.update_salinity(phi_last=phi_last)
 				self.update_volume_averages()
 				self.Q = self.update_sources_sinks(phi_last=phi_last, T_last=T_last)
 				self.vehicle_temp_scheme()
 				self.T[1:-1, 1:-1] = T_last[1:-1, 1:-1] + Tx + Tz + self.Q * self.dt / rhoc_last[1:-1, 1:-1]
 				self.apply_boundary_conditions(T_last, k_last, rhoc_last)
 
-				if self.vehicle_heat_scheme == 'Constant T':
-					self.T[self.vehicle_geom] = self.vehicle_temp
-				elif self.vehicle_heat_scheme == 'RTG T':
-					self.T[self.RTGS] = self.vehicle_temp
+				if 'Constant T' in self.vehicle_heat_scheme:
+					self.T[self.vehicle_geom] = self.vehicle_T
+				elif 'RTG T' in self.vehicle_heat_scheme:
+					self.T[self.RTGS] = self.vehicle_T
 
-				TErr = (abs(self.T[1:-1, 1:-1] - T_last[1:-1, 1:-1])).max()
-				phiErr = (abs(self.phi[1:-1, 1:-1] - phi_last[1:-1, 1:-1])).max()
+				TErr = (abs(self.T - T_last)).max()
+				phiErr = (abs(self.phi - phi_last)).max()
 
 				# kill statement when parameters won't allow solution to converge
 				if iter_k > 2000:
@@ -584,19 +706,26 @@ class HeatSolver(outputs):
 				k_last, rhoc_last = self.k.copy(), self.rhoc.copy()
 
 			# outputs here
-			self.update_vehicle_position()
+			if move:
+				moved = self.update_vehicle_position()
+				if moved:
+					try:
+						self.outputs.get_results(self, n=n, extra=1)
+					except AttributeError:
+						pass
 			self.num_iter.append(iter_k)
 			self.model_time += self.dt
 
-			if n % 5000 == 0:
+			"""
+			if n % 10000 == -1:
 				outdir = '/Users/chasechivers/Dropbox (GaTech)/VERNE/'
-				CMAP = 'jet'
+				CMAP = 'cividis'
 				fig, (ax1, ax2) = plt.subplots(num=1, nrows=1, ncols=2, clear=True, sharex='all', sharey='all')
 				fig.suptitle('t = {:0.02f}s'.format(self.model_time))
 				#tmp = self.T.copy()
 				#tmp[self.vehicle==1] = np.nan
-				Tcm = ax1.pcolormesh(self.X, -self.Z, self.T, vmin=self.Tsurf, vmax=self.T[self.vehicle==0].max(),
-				                     cmap=CMAP)
+				Tcm = ax1.pcolormesh(self.X, -self.Z, self.T, vmin=self.T_initial.min(),
+				                     vmax=self.T[self.vehicle==0].max(), cmap=CMAP)
 				ax1.set_title('$T$, K')
 				ax1.set_ylabel('Depth, m')
 				ax1.set_xlabel('$x$, m')
@@ -612,15 +741,19 @@ class HeatSolver(outputs):
 				#short_string = '{}{}_n={}.png'.format(outdir, 'verne_firsttry', str(n).zfill(len(str(nt))))
 				#fig.savefig(short_string, format='png', dpi=100.)
 				plt.pause(0.001)
-
+			"""
 
 			try:  # save outputs
 				self.outputs.get_results(self, n=n)
 			# this makes the runs incredibly slow and is really not super useful, but here if needed
-			# save_data(self, 'model_runID{}.pkl'.format(self.outputs.tmp_data_file_name.split('runID')[1]),
+			#   save_data(self, 'model_runID{}.pkl'.format(self.outputs.tmp_data_file_name.split('runID')[1]),
 			#          self.outputs.tmp_data_directory, final=0)
 			except AttributeError:  # no outputs chosen
 				pass
+			if self.vehicle_geom[0].max() == self.nz - 3:
+				print("reached end of domain")
+				self.run_time = _timer_.clock() - start_time
+				return self.model_time
 
 		# del T_last, phi_last, Tx, Tz, iter_k, TErr, phiErr
 
