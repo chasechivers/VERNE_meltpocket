@@ -48,10 +48,9 @@ Z0s = np.zeros(chunk_number + 1)
 for i in range(1, chunk_number - 1):
 	Z0s[i] = (i + 1) * chunk_spacing + chunk_spacing / 2 - chunk_size / 2
 Z0s[-1] = D - chunk_size_deep
-cn = 3
+cn = 1
 
-for it, Z0 in enumerate(Z0s[2:]):
-	# tmp_file_name =
+for it, Z0 in enumerate(Z0s):
 	print('\n============\nstarting at depth =', Z0, 'm')
 	if Z0 > 13e3:
 		print('\tusing larger chunk size for deeper simulations')
