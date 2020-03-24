@@ -18,18 +18,15 @@ def file_namer(model, outputdir, *argv):
 	            'thickness': 0, 'freezestop': model.freezestop, 'num_iter': model.num_iter,
 	            'model_time': model.model_time, 'run_time': model.run_time, 'Ttol': 0.1, 'phitol': 0.01,
 	            'symmetric': 0, 'Stol': 1, 'cp_i': model.cp_i, 'tidal_heat': model.tidal_heat, 'dL': 0,
-	            'botT': 0, 'std_set': 1}
+	            'botT': 0, 'std_set': 1, 'real_Lz':15e3, 'vehicle_T': 300, 'vehicle_w':0.3, 'vehicle_h':4,
+	            'vehicle_d':0, 'use_pressure':0}
 	if model.issalt:
 		defaults['C_rho'] = model.C_rho
 		defaults['Ci_rho'] = model.Ci_rho
-		defaults['saturated'] = model.saturated
 		defaults['rejection_cutoff'] = 0.25
 		defaults['composition'] = 0
 		defaults['concentration'] = 0
 		defaults['saturation_point'] = model.saturation_point
-	if model.topBC == 'Radiative':
-		defaults['std_set'] = 1
-		defaults['Std_Flux_in'] = model.Std_Flux_in
 	dict = {key: value for key, value in model.__dict__.items() if not key.startswith('__') and \
 	        not callable(key) and type(value) in [str, bool, int, float] and value != defaults[key]}
 	file_name = outputdir
@@ -54,11 +51,13 @@ def file_namer(model, outputdir, *argv):
 				file_name += var
 	else:
 		for key in dict.keys():
-			if key in ['Lx', 'Lz', 'dx', 'dz', 'dt', 'kT', 'cpT', 'issalt', 'Tsurf', 'Tbot', 'depth', 'thickness',
-			           'R_int', 'composition', 'concentration', 'topBC', 'sidesBC', 'tidalheat']:
+			if key in ['Lx', 'Lz', 'dx', 'dz', 'dt', 'composition', 'concentration', 'topBC', 'sidesBC', 'vehicle_h',
+			           'vehicle_w', 'vehicle_d', 'vehicle_T']:
 				if isinstance(dict[key], float):
+					if 'vehicle' in key: key.replace('vehicle', 'Ve')
 					file_name += '_{}={:0.03f}'.format(key, dict[key])
 				else:
+					if 'vehicle' in key: key.replace('vehicle', 'Ve')
 					file_name += '_{}={}'.format(key, string_IO(dict[key]))
 	return file_name + '.pkl'
 

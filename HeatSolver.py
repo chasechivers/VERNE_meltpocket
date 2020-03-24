@@ -628,21 +628,19 @@ class HeatSolver:
 		print('\t thermal properties:')
 		print('\t    ki(T):    {}'.format(stringIO(self.kT)))
 		print('\t    ci(T):    {}'.format(stringIO(self.cpT)))
-		print('\t intrusion/salt:')
+		print('\t vehicle:')
 		try:
 			self.vehicle_geom
-			print('\n\t    width:             {self.vehicle_w} m')
-			print('\n\t    length:            {self.vehicle_h} m')
-			print('\n\t    initial depth:     {self.vehicle_d} m')
-			print('\n\t    heat scheme:       {self.vehicle_heat_scheme}')
+			print(f'\t    width:             {self.vehicle_w} m')
+			print(f'\t    length:            {self.vehicle_h} m')
+			print(f'\t    initial depth:     {self.vehicle_d} m')
+			print(f'\t    heat scheme:       {self.vehicle_heat_scheme}')
 		except:
 			pass
 		print('\t    salinity: {}'.format(stringIO(self.issalt)))
 		if self.issalt:
 			print(f'\t       composition:    {self.composition}')
 			print(f'\t       concentration:  {self.concentration}ppt')
-		print('\t other:')
-		print(f'\t     stop on freeze: {stringIO(self.freezestop)}')
 		print('-------------------------')
 		try:
 			print('Requested outputs: {}'.format(list(self.outputs.transient_results.keys())))
