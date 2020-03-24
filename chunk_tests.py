@@ -25,6 +25,7 @@ out_dir = "./results/"
 Tsurf = 100.  # K
 Tbot = 273.15  # K
 D = 15e3  # m
+chunk_size_shallow = 20. # m
 chunk_size = 50.  # m
 chunk_size_deep = 150. # m
 chunk_number = 15  # N
@@ -48,18 +49,20 @@ for i in range(1, chunk_number-1):
 	Z0s[i] = (i+1)*chunk_spacing + chunk_spacing/2 - chunk_size/2
 Z0s[-1] = D - chunk_size_deep
 cn=1
-for it, Z0 in enumerate(Z0s[2:]):
-	#tmp_file_name =
+for it, Z0 in enumerate(Z0s[:]):
 	print('\n============\nstarting at depth =', Z0, 'm')
 	if Z0 > 13e3:
 		print('\tusing larger chunk size for deeper simulations')
 		chunk_size = chunk_size_deep
+	elif Z0 < 3e3:
+		print("\tusing smaller chunk size for shallow simulatuons")
+		chunk_size = chunk_size_shallow
 	md = IceSystem(Lx=Lx, Lz=chunk_size, dx=dx, dz=dz, use_X_symmetry=True, Z0=Z0)
 	md.init_T(Tsurf=Tsurf, Tbot=Tbot, real_Lz=D)
 	md.init_vehicle(depth=initial_depth+md.Z[0,0], length=h, radius=w, T=vehicle_temp, num_RTG=number_of_rtgs, temp_regulation="RTG Flux", power=thermal_power_per_rtg)
 	
 	if "Constant T" in md.vehicle_heat_scheme[0]:
-		dt = 0.5
+		dt = 1.0
 	else:
 		dt = 4. * min(md.dx, md.dz)**2 * md.rhoc.min() / ( 3 * md.k.max()**2 )
 	out_freq = 24 * 60 * 60.
@@ -67,7 +70,7 @@ for it, Z0 in enumerate(Z0s[2:]):
 	
 	md.outputs.tmp_data_file_name += "nc_vq_chunk={}_Z0={}".format(cn+it,Z0)
 
-	if it == 0:
+	if md.Z[0,0] == 0:
 		md.set_boundaryconditions(top="Radiative", sides="RFlux", dL=100.)
 	else:
 		TTOPOUT = Tsurf*(Tbot/Tsurf)**((Z0-md.dz)/D)
