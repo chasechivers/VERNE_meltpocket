@@ -72,7 +72,7 @@ class IceSystem(HeatSolver):
 		"""
 		styr = 3.154e7  # s/yr, seconds in a year
 
-		g = 1.32  # m/s2, Europa surface gravity
+		g = 1.32  # m/s2, ropa surface gravity
 
 		# Thermal properties
 		rho_i = 917.  # kg/m3, pure ice density
@@ -236,54 +236,63 @@ class IceSystem(HeatSolver):
 		self.Tbot = Tbot
 		self.init_volume_averages()
 
-	def set_vehicle_geom(self, depth, length, radius, num_RTG, geometry, rtg_size=0.6):
-		if isinstance(geometry, str):
-			# Assume vehicle geometry is a rectangle for now
-			if geometry == 'box':
-				print('setting geometry')
-				#center = self.vh / 2 + de
-				r = np.where(abs(self.X[0, :]) <= radius / 2)[0]
-				z = np.intersect1d(np.where(self.Z[:, 0] <= length + depth), np.where(self.Z[:, 0] >= depth))
-				tmp = np.zeros(self.T.shape)
-				tmp[z.min():z.max(), r.min():r.max() + 1] = 1
-				self.vehicle_geom = np.where(tmp == 1)
+	def set_vehicle_geom(self, depth, length, radius, num_RTG, geometry, rtg_size=0.6, noseshape=None, **kwargs):
+		print('setting geometry')
+		#center = self.vh / 2 + de
+		r = np.where(abs(self.X[0, :]) <= radius / 2)[0]
+		z = np.intersect1d(np.where(self.Z[:, 0] <= length + depth), np.where(self.Z[:, 0] >= depth))
+		tmp = np.zeros(self.T.shape)
+		tmp[z[0]:z[-1], r[0]:r[-1] + 1] = 1
+		if noseshape == "conical":
+			nl = kwargs['noselength']
+			nose_depth = length + depth
+			cone_area = np.intersect1d(np.where(self.Z[:, 0] <= nose_depth + nl),
+			                      np.where(self.Z[:, 0] >= nose_depth - self.dz))
+			Xcone = self.X[cone_area[0]:cone_area[-1], r[0]:r[-1] + 1]
+			Zcone = self.Z[cone_area[0]:cone_area[-1], r[0]:r[-1] + 1]
+			cone = np.where((Zcone-self.Z[0,0])/(Zcone.max()-self.Z[0,0]) <= 1 - Xcone*radius)
+			self.nosecone = (cone[0] + cone_area[0], cone[1])
+			tmp[self.nosecone] = 1
 
-				if num_RTG in [3,4]:
-					# current design dictates TWO FRONT RTGS!
-					# find where the RTGs are
-					# two RTGS in the front
-					front_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= length + depth),
-					                       np.where(self.Z[:, 0] >= length + depth - 2 * rtg_size))
-					tmp = np.zeros(self.T.shape)
-					tmp[front_rtg_loc.min():front_rtg_loc.max(), r.min():r.max() + 1] = 1
-					frontrtgs = np.where(tmp == 1)
-					# md.headgeom = np.where(tmp == 1)
 
-					# only 1 rear RTG
-					if num_RTG == 3:
-						# one rear RTG
-						rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + rtg_size),
-						                       np.where(self.Z[:,0] >= depth))
-					elif num_RTG == 4:
-						# two rear RTGs
-						rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + 2*rtg_size),
-						                      np.where(self.Z[:, 0] >= depth))
+		elif noseshape is None:  # assumed cylindrical
+			pass
 
-					tmp = np.zeros(self.T.shape)
-					tmp[rear_rtg_loc.min():rear_rtg_loc.max(), r.min():r.max() + 1] = 1
-					rearrtgs = np.where(tmp==1)
-					self.RTGS = (np.append(frontrtgs[0], rearrtgs[0]),
-					             np.append(frontrtgs[1], rearrtgs[1]))
-				else:
-					pass
+		self.vehicle_geom = np.where(tmp == 1)
 
-		# custom geometry?
+		if num_RTG in [3,4]:
+			# current design dictates TWO FRONT RTGS!
+			# find where the RTGs are
+			# two RTGS in the front
+			front_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= length + depth),
+			                       np.where(self.Z[:, 0] >= length + depth - 2 * rtg_size))
+			tmp = np.zeros(self.T.shape)
+			tmp[front_rtg_loc.min():front_rtg_loc.max(), r.min():r.max() + 1] = 1
+			frontrtgs = np.where(tmp == 1)
+			# md.headgeom = np.where(tmp == 1)
+
+			# only 1 rear RTG
+			if num_RTG == 3:
+				# one rear RTG
+				rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + rtg_size),
+				                       np.where(self.Z[:,0] >= depth))
+			elif num_RTG == 4:
+				# two rear RTGs
+				rear_rtg_loc = np.intersect1d(np.where(self.Z[:, 0] <= depth + 2*rtg_size),
+				                      np.where(self.Z[:, 0] >= depth))
+
+			tmp = np.zeros(self.T.shape)
+			tmp[rear_rtg_loc.min():rear_rtg_loc.max(), r.min():r.max() + 1] = 1
+			rearrtgs = np.where(tmp==1)
+			self.RTGS = (np.append(frontrtgs[0], rearrtgs[0]),
+			             np.append(frontrtgs[1], rearrtgs[1]))
 		else:
-			self.vehicle_geom = geometry
+			pass
+
 		return self.vehicle_geom
 
 	def init_vehicle(self, depth, length, radius, T, num_RTG=0, temp_regulation=['Constant T'],
-	                 geometry='box', rtg_size=0.6, power=1e3):
+	                 rtg_size=0.6,power=1e3, noseshape=None, **kwargs):
 		# Probably want to be able to make custom temperature profile/geometry
 		## e.g. High front RTG temperature = ??, 300 K rest of body
 		##      or some step function, polynomial, w/e
@@ -292,7 +301,16 @@ class IceSystem(HeatSolver):
 		self.vehicle_d = depth
 		self.vehicle_T = T
 		# Assume vehicle geometry is a rectangle for now
-		self.vehicle_geom = self.set_vehicle_geom(depth, length, radius, num_RTG, geometry, rtg_size)
+		if noseshape=="conical":
+			if "noselength" not in kwargs:
+				raise Exception("ERROR: must chooser length of conical nose; \n\ti.e. model.set_vehicle_geom( "
+			                "..., noseshape='conical', noselength=noselength)")
+			else:
+				print('using conical nose')
+				self.vehicle_geom = self.set_vehicle_geom(depth, length, radius, num_RTG,rtg_size,
+				                                          noseshape=noseshape, noselength=kwargs['noselength'])
+		else:
+			self.vehicle_geom = self.set_vehicle_geom(depth, length, radius, num_RTG, geometry, rtg_size, noseshape)
 		self.vehicle[self.vehicle_geom] = 1
 		self.T[self.vehicle_geom] = T
 		self.vehicle_heat_scheme = temp_regulation

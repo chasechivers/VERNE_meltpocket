@@ -349,10 +349,16 @@ class HeatSolver:
 		# hidx = int(self.vehicle_h/self.dz)+1
 		widx = self.vehicle_geom[1].max()  # index of vehicle width
 		hidx = self.vehicle_geom[0].max()  # index for vehicle front
-		bidx = self.vehicle_geom[0].min()  # index for vehicle back
+		bidx = self.vehicle_geom[0][0]#.min()  # index for vehicle back
 		Zidxs, Xidxs = self.vehicle_geom[0][-widx:] + 1, self.vehicle_geom[1][-widx:]
+
 		if Xidxs[0] == 1:  # likely using X-symmetry
 			Xidxs = self.vehicle_geom[1][:widx + 1]
+
+		if "nosecone" in self.__dict__:
+			Zidxs = np.where(self.vehicle[(self.nosecone[0]+1, self.nosecone[1])] == 0)[0]
+
+		else:
 			Zidxs = np.array([int(Zidxs[0]) for i in Xidxs], dtype=int)
 
 		if self.phi[Zidxs, Xidxs].sum() == len(Xidxs):
@@ -364,9 +370,9 @@ class HeatSolver:
 			self.vehicle[Zidxs, Xidxs] = 1
 			self.vehicle[bidx, Xidxs] = 0
 			# reassign T to "behind nose"
-			self.T[hidx, Xidxs] = Tsave
+			self.T[Zidxs, Xidxs] = Tsave
 			# reassign water to "behind  nose"
-			self.phi[hidx, Xidxs] = phisave
+			self.phi[Zidxs, Xidxs] = phisave
 			# move salt??
 			if self.issalt: self.S[hidx, Xidxs] = Ssave
 			"""
@@ -419,8 +425,6 @@ class HeatSolver:
 		if self.issalt:
 			self.Tm = self.Tm_func(self.S, *self.Tm_consts[self.composition])
 		# calculate new enthalpy of solid ice
-		else:
-			self.Tm = self.Tm + (self.TmPfunc() if self.use_pressure else 0)
 		Hs = self.cp_i * self.Tm  # update entalpy of solid ice
 		Hl = Hs + self.constants.Lf
 		H = self.cp_i * self.T + self.constants.Lf * phi_last  # calculate the enthalpy in each cell
