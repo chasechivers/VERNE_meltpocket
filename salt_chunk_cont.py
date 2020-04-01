@@ -68,7 +68,7 @@ for it, Z0 in enumerate(Z0s[4:]):
 	
 	print("...adding salt from previous chunk")
 	if it == 0:
-		# just use the result from the previous run => runID6168
+		# just use the result from the surface run, Z0 = 0.0
 		#old_ppt = 6.337952495908039
 		#old_water_volume = 0.911918710120458
 		# chunk = 3. restarted to make sure this actually worked :)
