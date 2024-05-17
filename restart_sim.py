@@ -5,7 +5,7 @@ import numpy as np
 # choose a directory to output results files
 outdir = "./results/"
 
-rs_dir = "/storage/home/hcoda1/0/cchivers3/p-arobel3-0/rich_project_eas-robel/VERNE/tmp/"
+rs_dir = "./results/"
 rs_file = rs_dir+"tmp_data_runID9536MgSO4282.0_1L_chunk=10_Z0=9470.0_n=4924800.pkl"
 
 def scrape_from_filename(filename):
