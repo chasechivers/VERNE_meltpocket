@@ -12,7 +12,7 @@ class VERNESim(HeatSolver, ThermophysicalProperties, SalinityFuncs):
 	             dz=None, dx=None, nz=None, nx=None,
 	             kT=True,
 	             use_X_symmetry=True, verbose=False,
-	             coordinates="zx"):
+	             coordinates="zr"):
 		super().__init__()
 		# Create constants for simulations
 		self.constants = constants.constants()
