@@ -1,6 +1,7 @@
 import dill as pickle
 import re
 import os
+import numpy as np
 
 
 def nat_sort(x):
@@ -12,25 +13,17 @@ def nat_sort(x):
 def file_namer(model, outputdir, *argv):
 	# defaults chosen for file so that the file name isn't enormous...
 	#  variables chosen to be model.__ can be changed to be included in file name if so desired
-	defaults = {'Lz': 5e3, 'Lx': 5e3, 'dx': 10, 'dz': 10, 'dt': 3.14e7 / (24 * 4), 'kT': True, 'cpT': True,
-	            'issalt': False, 'Tsurf': 0., 'Tbot': 0, 'topBC': True, 'botBC': True, 'sidesBC': True,
-	            'tidalheat': False, 'nx': model.nx, 'nz': model.nz, 'T_int': 273.15, 'depth': 0, 'R_int': 0,
-	            'thickness': 0, 'freezestop': model.freezestop, 'num_iter': model.num_iter,
-	            'model_time': model.model_time, 'run_time': model.run_time, 'Ttol': 0.1, 'phitol': 0.01,
-	            'symmetric': 0, 'Stol': 1, 'cp_i': model.cp_i, 'tidal_heat': model.tidal_heat, 'dL': 0,
-	            'botT': 0, 'std_set': 1, 'real_Lz':15e3, 'vehicle_T': 300, 'vehicle_w':0.3, 'vehicle_h':4,
-	            'vehicle_d':0, 'use_pressure':0}
-	if model.issalt:
-		defaults['C_rho'] = model.C_rho
-		defaults['Ci_rho'] = model.Ci_rho
-		defaults['rejection_cutoff'] = 0.25
-		defaults['composition'] = 0
-		defaults['concentration'] = 0
-		defaults['saturation_point'] = model.saturation_point
-	dict = {key: value for key, value in model.__dict__.items() if not key.startswith('__') and \
-	        not callable(key) and type(value) in [str, bool, int, float] and value != defaults[key]}
+	# wants or needs...
+	wants = {"D": 50, "w": model.vehicle_r * 2.5, "dx": 0.01, "dz": 0.1, "dt": 10, "kT": True, "Z0": None,
+	         "vehicle_r":0.3, "vehicle_h":4, "vehicle_T": 300, "melt_mod": 1, "Tsurf": 110,
+	         "composition": None, "concentration": None}
+
+	dict = {key: value for key, value in model.__dict__.items() if key in wants and value != wants[key]}
+
+	#dict = {key: value for key, value in model.__dict__.items() if not key.startswith('__') and \
+	#        not callable(key) and type(value) in [str, bool, int, float] and value != defaults[key]}
 	file_name = outputdir
-	print('naming file!')
+	if model.verbose: print('naming file!')
 
 	def string_IO(input):
 		if isinstance(input, bool):
@@ -44,26 +37,28 @@ def file_namer(model, outputdir, *argv):
 	if len(argv) != 0:
 		print('custom naming!')
 		for var in argv:
-			print(var)
+			print(f" adding {var} to filename")
 			if var in dict.keys():
-				file_name += '_{}={}'.format(var, string_IO(dict[var]))
+				file_name += f"_{var}={dict[var]}"
+			elif var in model.__dict__.keys():
+				if isinstance(var, (float, int)):
+					file_name += f"_{var}={model.__dict__[var]:0.03f}"
+				else:
+					file_name += f"_{var}={model.__dict__[var]}"
 			else:
-				file_name += var
+				file_name += f"_{var}"
 	else:
 		for key in dict.keys():
-			if key in ['Lx', 'Lz', 'dx', 'dz', 'dt', 'composition', 'concentration', 'topBC', 'sidesBC', 'vehicle_h',
-			           'vehicle_w', 'vehicle_d', 'vehicle_T']:
-				if isinstance(dict[key], float):
-					if 'vehicle' in key: key.replace('vehicle', 'Ve')
-					file_name += '_{}={:0.03f}'.format(key, dict[key])
-				else:
-					if 'vehicle' in key: key.replace('vehicle', 'Ve')
-					file_name += '_{}={}'.format(key, string_IO(dict[key]))
-	return file_name + '.pkl'
+			if isinstance(dict[key], float):
+				if "vehicle" in key: key.replace("vehicle", "ve")
+				file_name += f"_{key}={dict[key]:0.03f}"
+			else:
+				if "vehicle" in key: key.replace("vehicle", "ve")
+				file_name += f"_{key}={key, string_IO(dict[key])}"
+	return file_name + ".pkl"
 
 
 def save_data(data, file_name, outputdir, final=1, *argv):
-	import numpy as np
 	if isinstance(data, (dict, list)) or type(data).__module__ == np.__name__:
 		file_name = outputdir + file_name + '.pkl'
 	elif final == 1:
@@ -76,8 +71,11 @@ def save_data(data, file_name, outputdir, final=1, *argv):
 
 
 def load_data(file_name):
-	with open(file_name, 'rb') as input:
-		return pickle.load(input)
+	if ".pkl" in file_name:
+		with open(file_name, 'rb') as input:
+			return pickle.load(input)
+	else:
+		raise Exception("File extension not recognized")
 
 
 def directory_spider(input_dir, path_pattern="", file_pattern="", maxResults=500000):
